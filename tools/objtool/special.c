@@ -88,24 +88,32 @@ static int get_alt_entry(struct elf *elf, const struct special_entry *entry,
 	alt->jump_or_nop = entry->jump_or_nop;
 
 	if (alt->group) {
-		alt->orig_len = *(unsigned char *)(sec->data->d_buf + offset +
-						   entry->orig_len);
-		alt->new_len = *(unsigned char *)(sec->data->d_buf + offset +
-						  entry->new_len);
-		/*
-		 * On RISC-V, new_len should not be 0.
-		 * Try calculate it from relocs which might be ADD16/SUB16 pairs.
-		 */
-		if (alt->new_len == 0 && elf->ehdr.e_machine == EM_RISCV) {
-			struct reloc *radd, *rsub;
-			radd = find_reloc_by_dest(elf, sec, offset + entry->new_len);
-			if (!radd) {
-				WARN_FUNC("can't find new_len", sec, offset + entry->new_len);
-				return -1;
+		/* Here on riscv is u16, while x86 and loongarch are both u8,
+		 * We can look at arch/<arch>/include/asm/alternative.h::struct alt_entry. */ 
+		alt->orig_len =	bswap_if_needed(elf, *(unsigned short *)(sec->data->d_buf + offset +
+									entry->orig_len));
+		alt->new_len = bswap_if_needed(elf, *(unsigned short *)(sec->data->d_buf + offset +
+									entry->new_len));
+
+		if (elf->ehdr.e_machine == EM_RISCV)  {
+			/*
+			* On RISC-V, new_len should not be 0.
+			* Try calculate it from relocs which might be ADD16/SUB16 pairs.
+			*/
+			if (alt->new_len == 0) {
+				struct reloc *radd, *rsub;
+				radd = find_reloc_by_dest(elf, sec, offset + entry->new_len);
+				if (!radd) {
+					WARN_FUNC("can't find new_len", sec, offset + entry->new_len);
+					return -1;
+				}
+				rsub = radd + 1;
+				alt->new_len = radd->sym->offset - rsub->sym->offset;
+				alt->orig_len = alt->new_len;
 			}
-			rsub = radd + 1;
-			alt->new_len = radd->sym->offset - rsub->sym->offset;
-			alt->orig_len = alt->new_len;
+		} else {
+			alt->orig_len =	*(unsigned char *)(sec->data->d_buf + offset + entry->orig_len);
+			alt->new_len = *(unsigned char *)(sec->data->d_buf + offset + entry->new_len);
 		}
 	}
 
