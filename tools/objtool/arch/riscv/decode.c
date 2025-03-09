@@ -113,10 +113,17 @@ bool arch_pc_relative_reloc(struct reloc *reloc)
 #define RVC_OPCODE_LDSP		0x6002
 #define RVC_OPCODE_JR		0x8002
 #define RVC_OPCODE_SDSP		0xe002
+#define RVC_OPCODE_ADDI16SP_LUI	0x6001
+#define RVC_OPCODE_LD           0x6000
+#define RVC_OPCODE_OTHER        0x8001 // ld lui srli srai andi and or xor sub
 
 #define RVC_EXTRACT_OPCODE(x) \
 	({typeof(x) x_ = (x); \
 	(x_ & RVC_INSN_FUNCT3_MASK) | (x_ & 0x3); })
+
+#define RVC_EXTRACT_OPCODE_11_7(x) \
+	({typeof(x) x_ = (x); \
+    (RVC_X(x_, 7, GENMASK(4, 0))); })
 
 #define RVC_EXTRACT_C0_RD_REG(x) \
 	({typeof(x) x_ = (x); \
@@ -386,10 +393,18 @@ static void insn_decode2(struct insn *ins, u16 code,
 		break;
 
 	/* sp op pattern 2/2: c.addi16sp */
-	case RVC_OPCODE_ADDI16SP:
-		if (RVC_EXTRACT_CI_RD_REG(code) == CFI_SP) {
-			ins->imm = RVC_EXTRACT_ADDI16SP_IMM(code);
-			ins->code = RV_CODE_SP_ADDI;
+	case RVC_OPCODE_ADDI16SP_LUI:
+		rd = RVC_EXTRACT_CI_RD_REG(code);
+		if (RVC_EXTRACT_OPCODE_11_7(code) != 0x2) { // c.lui
+			if (rd == CFI_SP || rd == CFI_BP) {
+				ins->code = RV_CODE_SP_HINT;
+				ins->reg = rd;
+			}
+		} else { // c.addi16sp
+			if (rd == CFI_SP) {
+				ins->imm = RVC_EXTRACT_ADDI16SP_IMM(code);
+				ins->code = RV_CODE_SP_ADDI;
+			}
 		}
 		break;
 
@@ -472,7 +487,15 @@ static void insn_decode2(struct insn *ins, u16 code,
 		}
 		break;
 
-	/* TODO: ld lui srli srai andi and or xor sub */
+	case RVC_OPCODE_OTHER:
+	case RVC_OPCODE_LD:
+		rd = RVC_EXTRACT_CI_RD_REG(code);
+		if (rd == CFI_BP) { // CFI_SP cannot be assigned to rd
+			ins->code = RV_CODE_SP_HINT;
+			ins->reg = rd;
+		}
+		break;
+		
 	case RVC_OPCODE_ADDIW:
 	case RVC_OPCODE_LI:
 	case RVC_OPCODE_SLLI:
