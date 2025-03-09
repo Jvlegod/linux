@@ -25,7 +25,7 @@
 #include <linux/minmax.h>
 #include <linux/log2.h>
 #ifdef CONFIG_RISCV
-#include <linux/objtool.h>>
+#include <linux/objtool.h>
 #endif
 
 /* Not needed on 64bit architectures */
